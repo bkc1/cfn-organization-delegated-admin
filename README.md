@@ -1,4 +1,4 @@
-# Cloudformation Stackset - Provision IAM role/policies across AWS Organizations
+# Cloudformation Stackset - Provision IAM role/policies across AWS Organization
 
 
 ## Overview 
