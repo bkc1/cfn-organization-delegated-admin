@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+
+Metadata:
+  Purpose:
+    Description: This template is intended to be used in a stackset from a Organtization-delegated 
+                 central IAM account. It will provision an IAM Role with several optional managed policies 
+                 attached based on job junction and support access needs. Optionally a custom(in-line) reference 
+                 IAM policy can also be associated with the role. The example in-inline policy in this template is for 
+                 the EC2 service, granting read access to all CloudWatch logs.
+
+  AWS::CloudFormation::Interface:
+    
+    ParameterGroups:
+      - 
+        Label:
+          default: "StackSet IAM Role and Policy Parameters"
+        Parameters:
+          - Central IAM Account ID
+          - ManagedPolicy
+          - Path
+          - PolicyName
+          - RoleName
+          - SuppportAccess
+
+    ParameterLabels:
+      CentralIAMAccountID:
+        default: Account ID
+      ManagedPolicy:
+        default: Managed Policy
+      Path:
+        default: Path
+      PolicyName:
+        default: Policy Name
+      RoleName:
+        default: Role Name
+      SuppportAccess:
+        default: Managed or Custom Policy
+
+Parameters:
+
+  CentralIAMAccountID:
+    Type: Number
+    Description: Principal in Role Trust Policy, allowing for AssumeRole from central IAM account
+    ConstraintDescription: Must be a valid 12 digit AWS Account ID
+
+  ManagedPolicy:
+    Type: String
+    Description: Predefined Managed Policy based on job junction associated IAM Role (optional)
+    ConstraintDescription: Must be a valid IAM Managed Policy or None.
+    AllowedValues:
+    - arn:aws:iam::aws:policy/AdministratorAccess
+    - arn:aws:iam::aws:policy/job-function/SupportUser
+    - arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
+    - arn:aws:iam::aws:policy/job-function/Billing
+    - arn:aws:iam::aws:policy/job-function/DatabaseAdministrator
+    - arn:aws:iam::aws:policy/job-function/SystemAdministrator
+    - arn:aws:iam::aws:policy/job-function/DataScientist
+    - arn:aws:iam::aws:policy/job-function/NetworkAdministrator
+    - None
+    Default: None
+
+  Path:
+    Type: String
+    Description: What IAM Path would you like to associate with your Role? 
+    AllowedPattern: (^\/$)|(^\/.*\/$)
+    Default: "/"
+
+  PolicyName:
+    Type: String
+    Description: What name would you like to use for the IAM Policy?
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9_+=,.@-]{1,64}$
+    ConstraintDescription: Must be alphanumeric starting with a character of the alphabet, be between 1 and 64 characters in length, and may contain the following special characters _+=,.@-
+
+  RoleName:
+    Type: String
+    Description: Would you like to provide a specific name for the IAM Role? (optional) 
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9]{1,64}$
+    ConstraintDescription: Role name must be between 1 and 64 alphanumeric characters in length, starting with an uppercase or lowercase character of the alphabet.
+    Default: "None"
+
+  SupportAccess:
+    Type: String
+    Description:  Defaults to adding the AWSSupportAccess managed policy, allowing access to the AWS Support Center. A custom IAM policy ARN can be used as well. 
+    AllowedPattern: ^arn:aws:iam::.+
+    ConstraintDescription: Must be an IAM policy ARN. 
+    Default: "arn:aws:iam::aws:policy/AWSSupportAccess"
+
+Conditions:
+
+  hasManagedPolicy: 
+    !Not [!Equals [!Ref ManagedPolicy, "None"]]
+
+  hasRoleName: 
+    !Not [!Equals [!Ref RoleName, "None"]]
+
+  hasPolicyName:
+    !Not [!Equals [!Ref PolicyName, "None"]]
+ 
+  hasSupportAccess:
+    !Not [!Equals [!Ref SupportAccess, "None"]]
+
+
+Resources:
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal: 
+              AWS:
+                !Sub
+                  - 'arn:aws:iam::${AccountId}:root'
+                  - { AccountId: !Ref CentralIAMAccountID }
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !If [hasManagedPolicy, !Ref ManagedPolicy, !Ref "AWS::NoValue"]
+        - !If [hasSupportAccess, !Ref SupportAccess , !Ref "AWS::NoValue"]
+      Path: !Ref Path
+      RoleName: !If [hasRoleName, !Ref RoleName, !Ref "AWS::NoValue"]
+
+  Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !If [hasPolicyName, !Ref PolicyName, !Ref "AWS::NoValue"]
+      Roles:
+        - !Ref Role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - logs:DescribeMetricFilters
+            - logs:DescribeSubscriptionFilters
+            - logs:FilterLogEvents
+            - logs:GetLogEvents
+            - logs:ListTagsLogGroup
+            Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "This is a policy meant to supply read-only access to all CW log streams and log groups associated with an AWS account"
+
+Outputs:
+
+  RoleName:
+    Description: The Role Name associated with the IAM Role
+    Value: !Ref Role
+    Export:
+      Name: !Join ["-", [!Ref "AWS::StackName", "role-name"]]
+
+  RoleARN:
+    Description: The ARN of the IAM Role
+    Value: !GetAtt Role.Arn
+    Export: 
+      Name: !Join ["-", [!Ref "AWS::StackName", "role-arn"]]
+
+  RoleId:
+    Description: The RoleId of the IAM Role
+    Value: !GetAtt Role.RoleId
+    Export:
+      Name: !Join ["-", [!Ref "AWS::StackName", "role-id"]]
+
+  PolicyName:
+    Description: The Name of the IAM Policy
+    Value: !Ref Policy
+    Export:
+      Name: !Join ["-", [!Ref "AWS::StackName", "policy-name"]]
