@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+
+Metadata:
+  Purpose:
+    Description: This template is intended to be used in a stackset from a Organtization-delegated 
+                 central IAM account.
+
+  AWS::CloudFormation::Interface:
+    
+    ParameterGroups:
+      - 
+        Label:
+          default: "StackSet IAM Role and Policy Parameters"
+        Parameters:
+          - DelegatedAdminAccountID
+
+    ParameterLabels:
+      DelegatedAdminAccountID:
+        default: "Delegated Admin Account ID"
+
+Parameters:
+
+  DelegatedAdminAccountID:
+    Type: Number
+    ConstraintDescription: Must be a valid 12 digit AWS Account ID
+
+Resources:
+
+  AdministrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetAdministrationRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AssumeRole-AWSCloudFormationStackSetExecutionRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - "arn:*:iam::*:role/AWSCloudFormationStackSetExecutionRole"
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref DelegatedAdminAccountID
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
